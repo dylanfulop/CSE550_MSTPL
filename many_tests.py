@@ -6,16 +6,16 @@ GRAPH_TYPE_GNM = 1
 GRAPH_TYPE_GNP = 2
 GRAPH_TYPE_STROGRATZ = 3
 GRAPH_TYPE_BARABASI = 4
-GRAPH_TYPE_REGULAR = 5
-GRAPH_TYPE_PARTITION = 6
-GRAPH_TYPE_GEO = 7
-GRAPH_TYPE_ANTI_SPT = 8
-GRAPH_TYPE_ANTI_PP = 9
+GRAPH_TYPE_PARTITION = 5
+GRAPH_TYPE_GEO = 6
+GRAPH_TYPE_ANTI_SPT = 7
+GRAPH_TYPE_ANTI_PP = 8
 
-def get_random_graph(min_n=5, max_n=10, seed=0, include_anti_graphs=True):
+def get_random_graph(min_n=5, max_n=10, seed=0, include_anti_graphs=False):
 
-    if include_anti_graphs: type_of_g = random.randint(1,9)
-    else: type_of_g = random.randint(1,7)
+    if include_anti_graphs: type_of_g = random.randint(1,8)
+    else: type_of_g = random.randint(1,6)
+    print("GRAPH TYPE ", type_of_g)
     if type_of_g == GRAPH_TYPE_GNM:
         n = random.randint(min_n, max_n)
         m = random.randint(n, n**2)
@@ -45,15 +45,6 @@ def get_random_graph(min_n=5, max_n=10, seed=0, include_anti_graphs=True):
         for u,v,d in G.edges(data=True):
             d['weight'] = random.randint(1,1000)
         return G
-    elif type_of_g == GRAPH_TYPE_REGULAR:
-        n = random.randint(min_n, max_n)
-        d = random.randint(1, n-1)
-        if n*d % 2 != 0:
-            d+=1
-        G = nx.random_regular_graph(d,n,seed=seed)
-        for u,v,d in G.edges(data=True):
-            d['weight'] = random.randint(1,1000)
-        return G  
     elif type_of_g == GRAPH_TYPE_PARTITION:
         n = random.randint(min_n, max_n)
         sizes = []
@@ -123,21 +114,32 @@ def perform_trial(seed, min_n=3, max_n=10):
     all_trees['spt'] = spt 
     all_trees['mst'] = mst
 
+    #FAILED HEURISTICS
     #arbitrary path choice
-    all_trees['mst_rp'] = mst_remove_path(G, root, c, not_from_0=True,remove_edges=False,shrink_path=False,paths_less_than_c=False,choose_big_path=False)
-    all_trees['mst_rpe'] = mst_remove_path(G, root, c, not_from_0=True,remove_edges=True,shrink_path=False,paths_less_than_c=False,choose_big_path=False)
-    all_trees['mst_rpsp'] = mst_remove_path(G, root, c,not_from_0=True,remove_edges=False,shrink_path=True,paths_less_than_c=False,choose_big_path=False)
-    all_trees['mst_rpc'] = mst_remove_path(G, root, c,not_from_0=True,remove_edges=False,shrink_path=False,paths_less_than_c=True,choose_big_path=False)
-    #greedy path choice
-    all_trees['mst_rpg'] = mst_remove_path(G, root, c,not_from_0=True,remove_edges=False,shrink_path=False,paths_less_than_c=False,choose_big_path=True)
-    all_trees['mst_rpeg'] = mst_remove_path(G, root, c,not_from_0=True,remove_edges=True,shrink_path=False,paths_less_than_c=False,choose_big_path=True)
-    all_trees['mst_rpspg'] = mst_remove_path(G, root, c,not_from_0=True,remove_edges=False,shrink_path=True,paths_less_than_c=False,choose_big_path=True)
-    all_trees['mst_rpcg'] = mst_remove_path(G, root, c,not_from_0=True,remove_edges=False,shrink_path=False,paths_less_than_c=True,choose_big_path=True)
+    # all_trees['mst_rp'] = mst_remove_path(G, root, c, not_from_0=True,remove_edges=False,shrink_path=False,paths_less_than_c=False,choose_big_path=False)
+    # all_trees['mst_rpe'] = mst_remove_path(G, root, c, not_from_0=True,remove_edges=True,shrink_path=False,paths_less_than_c=False,choose_big_path=False)
+    # all_trees['mst_rpsp'] = mst_remove_path(G, root, c,not_from_0=True,remove_edges=False,shrink_path=True,paths_less_than_c=False,choose_big_path=False)
+    # all_trees['mst_rpc'] = mst_remove_path(G, root, c,not_from_0=True,remove_edges=False,shrink_path=False,paths_less_than_c=True,choose_big_path=False)
+    # #greedy path choice
+    # all_trees['mst_rpg'] = mst_remove_path(G, root, c,not_from_0=True,remove_edges=False,shrink_path=False,paths_less_than_c=False,choose_big_path=True)
+    # all_trees['mst_rpeg'] = mst_remove_path(G, root, c,not_from_0=True,remove_edges=True,shrink_path=False,paths_less_than_c=False,choose_big_path=True)
+    # all_trees['mst_rpspg'] = mst_remove_path(G, root, c,not_from_0=True,remove_edges=False,shrink_path=True,paths_less_than_c=False,choose_big_path=True)
+    # all_trees['mst_rpcg'] = mst_remove_path(G, root, c,not_from_0=True,remove_edges=False,shrink_path=False,paths_less_than_c=True,choose_big_path=True)
+    #all_trees['primc'] = prims_constrained(G, root, c)
 
-    #not mst_rp based
-    all_trees['primc'] = prims_constrained(G, root, c)
+    #my heuristics for 550 project - spt
+    all_trees['spt_imp'] = improve(all_trees['spt'], G, root, c)
+
     all_trees['primpred'] = prims_constrained(G, root, c, True, draw_digraph=False)
+    all_trees['pp_imp'] = improve(all_trees["primpred"], G, root, c)
+
     all_trees['revdelpr'] = reverse_delete_predictive(G, root, c)
+    all_trees['rd_imp'] = improve(all_trees["revdelpr"], G, root, c)
+
+    #baselines
+    all_trees['BDB_p1'] = BDB_Heurisitc(G, root, c)
+    all_trees['BDB'] = improve(all_trees["BDB_p1"], G, root, c)
+
 
     #ILP based
     if G.number_of_nodes() <= 10: all_trees['ilp'] = ILP_Solution(G, root, c) #disallowed without license at 11
@@ -150,8 +152,8 @@ def perform_trial(seed, min_n=3, max_n=10):
 
 def main():
     results = {}
-    for i in range(1000):
-        all_trees, G, c, root = perform_trial(seed=i, min_n=5, max_n=100)
+    for i in range(1000):#<< change this parameter for each trial
+        all_trees, G, c, root = perform_trial(seed=i, min_n=16, max_n=100)#<< change these parameters for each trial
         print(f"c = {c} | root = {root}")
         res_str, res_dict, best_valid = get_results(all_trees, c, root)
         print(res_str)

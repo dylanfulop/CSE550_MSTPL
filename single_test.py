@@ -13,8 +13,9 @@ DRAW = True
 max_diff = 0
 
 seed = random.randint(0,10000)
-seed = 1881
-all_trees, G, c, root = perform_trial(seed)
+seed = 142
+all_trees, G, c, root = perform_trial(seed, min_n=5, max_n=100)
+
 
 
 print(f"c = {c} | root = {root}")
@@ -36,8 +37,8 @@ if DRAW:
     if DRAW_DIGRAPH: plt.subplot(122)
     print(best_valid.edges())
     nx.draw(G, pos, with_labels=True, node_size=500, node_color='lightblue', width=2)
-    nx.draw_networkx_edges(G, pos, edgelist=best_valid.edges(), edge_color='red', width=2)
-    nx.draw_networkx_edges(G, pos, edgelist=all_trees['mst'].edges(), edge_color='blue', width=1)
+    nx.draw_networkx_edges(G, pos, edgelist=all_trees['BDB'].edges(), edge_color='red', width=2)
+    nx.draw_networkx_edges(G, pos, edgelist=all_trees['BDB_p1'].edges(), edge_color='blue', width=1)
     edge_weights = {(u,v):d['weight'] for u,v,d in G.edges(data=True)}
     nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_weights)
     plt.show()

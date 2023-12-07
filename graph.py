@@ -117,7 +117,7 @@ def mst_remove_path(graph:nx.graph.Graph, root, c, not_from_0=False, remove_edge
         return mst
     return mst
 
-def prims_constrained(original_graph:nx.graph.Graph, root, c, predictive=False, draw_digraph=False):
+def prims_constrained(original_graph:nx.graph.Graph, root, c, predictive=False, relaxation=False, draw_digraph=False):
     graph = original_graph.copy()
     digraph = nx.to_directed(graph)
     mst_vertices = {}
@@ -139,14 +139,54 @@ def prims_constrained(original_graph:nx.graph.Graph, root, c, predictive=False, 
                         min_weight = weight
                         min_depth = depth 
         if min_edge is None:
-            print("failed to find a tree", mst_vertices, mst_edges)
-            pos = nx.spring_layout(digraph)
-            plt.subplot(121)
-            nx.draw(digraph, pos, with_labels=True, node_size=500, node_color='lightblue', width=2)
-            return nx.minimum_spanning_tree(graph)
-        mst_edges.append(min_edge)
-        mst_vertices[min_edge[1]] = min_depth
-        digraph = give_direction(digraph, min_edge[0], min_edge[1], mst_vertices)
+            max_delay_relaxation = 0
+            max_edge = None
+            if relaxation:
+                available_edges = []
+                for u in mst_vertices:
+                    for v in mst_vertices:
+                        if u != v and graph.has_edge(u,v) and v != root:
+                            available_edges.append((u,v,graph.get_edge_data(u,v)['weight']))
+                for u,v,w in available_edges:
+                    for u1,v1 in mst_edges:
+                       if v1 == v:
+                           ow = graph.get_edge_data(u1,v1)['weight'] 
+                           ou = u1
+                    depth_relaxation = (ow-w) + mst_vertices[ou]-mst_vertices[u]
+                    if depth_relaxation > max_delay_relaxation:
+                        max_delay_relaxation = depth_relaxation
+                        max_edge = (u,v)
+                        max_old_edge = (ou,v)
+                        max_w = w
+                if max_edge is None:
+                    print("failed to find a tree", mst_vertices,mst_edges)
+                    return nx.minimum_spanning_tree(graph)
+                else:
+                    mst_edges.remove(max_old_edge)
+                    mst_edges.append(max_edge)
+                    uo = max_old_edge[0]
+                    u = max_edge[0]
+                    v = max_edge[1]
+                    mst_vertices[v] -= max_delay_relaxation
+                    parents = {v}
+                    change = True
+                    while change:
+                        change = False
+                        for u1,v1 in mst_edges:
+                            if u1 in parents and v1 not in parents:
+                                mst_vertices[v1] -= max_delay_relaxation 
+                                parents.add(v1)
+                                change = True
+            else:
+                print("failed to find a tree", mst_vertices, mst_edges)
+                pos = nx.spring_layout(digraph)
+                plt.subplot(121)
+                nx.draw(digraph, pos, with_labels=True, node_size=500, node_color='lightblue', width=2)
+                return nx.minimum_spanning_tree(graph)
+        else: #min edge exists
+            mst_edges.append(min_edge)
+            mst_vertices[min_edge[1]] = min_depth
+            if predictive: digraph = give_direction(digraph, min_edge[0], min_edge[1], mst_vertices)
     if draw_digraph and predictive:
         pos = nx.spring_layout(digraph,15)
         plt.subplot(121)
@@ -201,10 +241,13 @@ def get_ILP_PuLP(graph:nx.graph.Graph, root, c):
         subsets = itertools.combinations(nodes,size)
         for subset in subsets:
             cst = 0
+            edge_count = 0
             for u,v in graph.edges():
                 if u in subset and v in subset:
                     cst += edge_vars[(u,v)]
-            model += cst <= size-1
+                    edge_count += 1
+            if edge_count > size-1:
+                model += cst <= size-1
     cst = 0
     for edge in graph.edges():
         cst += edge_vars[edge]
@@ -540,26 +583,134 @@ def a_star_based(graph:nx.Graph, root, c):
     return g
 
 
+
+
+
+
+
+#used for the improvement phase of BDB
+def LBA_algorithm(tree:nx.Graph, graph:nx.Graph, root, c, new_edge_weight, old_edge_weight, child):
+    # http://reeves.csc.ncsu.edu/Theses/1996_10_SalamaThesis.pdf page 76
+    cycle = nx.cycle_basis(tree, child)
+    if len(cycle) != 1:
+        print(list(tree.edges()))
+        print(cycle, "more or less than one cycle?")
+        exit(-1)
+    cycle = cycle[0]
+
+    improvement = 0
+    l_remove = None
+    l_add = None
+
+    for i,xi in enumerate(cycle):
+        if i < len(cycle)-1: this_edge = (xi, cycle[i+1])
+        else : this_edge = (xi, cycle[0])
+        # fine the least cost l'i to replace li in connecting xi upstream towards the source
+        min_rep_w = float("inf")
+        for u,v,d in graph.edges(xi, data=True):
+            if not tree.has_edge(u,v) and d['weight'] < min_rep_w:
+                w_l_add = d['weight']
+                w_l_remove = tree.get_edge_data(this_edge[0],this_edge[1])['weight']
+                if w_l_remove + old_edge_weight - w_l_add - new_edge_weight > improvement:
+                    rep_tree = tree.copy()
+                    rep_tree.remove_edge(this_edge[0],this_edge[1])
+                    rep_tree.add_edge(u, v, weight=w_l_add)
+                    if get_max_depth(rep_tree, root) <= c:
+                        improvement = +w_l_remove + old_edge_weight - w_l_add - new_edge_weight
+                        l_remove = (this_edge[0],this_edge[1])
+                        l_add = (u,v)
+                        min_rep_w = w_l_add 
+    print("LBA reccomends replacing ", l_remove, " with ", l_add, " to handle replacing ", old_edge_weight, " with ", new_edge_weight, " for ", improvement)
+    if l_remove is None:
+        return False, None, None 
+    else:
+        return True, l_add, l_remove
+
+
+
+
+
+
+def remove_edge_attempt(tree:nx.Graph, graph:nx.Graph, root, c, old_parent, child, new_parent):
+    wnew = graph.get_edge_data(child, new_parent)['weight']
+    wold = tree.get_edge_data(child, old_parent)['weight']
+    if wold <= wnew:
+        return False, None, None
+    rep_tree = tree.copy()
+    rep_tree.remove_edge(old_parent, child)
+    rep_tree.add_edge(new_parent, child, weight=wnew)
+    has_loop = not nx.is_connected(rep_tree)
+    if not has_loop and get_max_depth(rep_tree, root) < c:
+        return True, None, None 
+    elif has_loop:
+        print("HAS LOOP", list(tree.edges()))
+        return LBA_algorithm(rep_tree, graph, root, c, wnew, wold, child)
+    return False, None, None
+
+
 #this function should take a tree and a graph and replace edges in the tree with different edges from the graph such that 
 # the new tree is still feasible but its weight is lowered as much as possible each step
-def improve(tree, graph, root, c):
-    for u,v,d in tree.edges(data=True):
-        pass
+def improve(tree:nx.Graph, graph:nx.Graph, root, c):
+    # http://reeves.csc.ncsu.edu/Theses/1996_10_SalamaThesis.pdf page 76
+    keep_going = True 
+    while keep_going:
+        keep_going = False
+        min_weight = float("inf")
+        min_edge = None
+        min_l_add_remove = None
+        depths, predecessor_nodes = nx.single_source_dijkstra(tree, root)
+        for u,v,d in graph.edges(data=True):
+            if not tree.has_edge(u,v):
+                if d['weight'] < min_weight:
+                    old_parent_u = None
+                    old_parent_v = None
+                    v_moved = False 
+                    u_moved = False
+                    if v != root: old_parent_v = predecessor_nodes[v][-2]
+                    if u != root: old_parent_u = predecessor_nodes[u][-2]
+                    if old_parent_v is not None: v_moved, l_add, l_remove = remove_edge_attempt(tree, graph, root, c, old_parent_v, v, u)
+                    if v_moved:
+                        min_l_add_remove = (l_add, l_remove)
+                        min_edge = ((u,v),(v,old_parent_v))
+                    else:
+                        if old_parent_u is not None: u_moved, l_add, l_remove = remove_edge_attempt(tree, graph, root, c, old_parent_u, u, v)
+                        if u_moved: 
+                            min_l_add_remove = (l_add, l_remove)
+                            min_edge = ((u,v),(u,old_parent_u))
+        
+        if min_edge is not None:
+            keep_going = True
+            tree = tree.copy()
+            min_edge_rep_weight = graph.get_edge_data(min_edge[0][0],min_edge[0][1])['weight']
+            tree.remove_edge(min_edge[1][0], min_edge[1][1])
+            tree.add_edge(min_edge[0][0],min_edge[0][1],weight=min_edge_rep_weight)
+            print("replacing ", min_edge[1], " with ", min_edge[0])
+            if min_l_add_remove is not None and min_l_add_remove[0] is not None:
+                print("replacing ", min_l_add_remove[1], " with ", min_l_add_remove[0])
+                ladd_edge_rep_weight = graph.get_edge_data(min_l_add_remove[0][0],min_l_add_remove[0][1])['weight']
+                tree.remove_edge(min_l_add_remove[1][0], min_l_add_remove[1][1])
+                tree.add_edge(min_l_add_remove[0][0],min_l_add_remove[0][1],weight=ladd_edge_rep_weight)        
+
+    return tree 
     
 def BDB_Heurisitc(graph, root, c):
     # http://reeves.csc.ncsu.edu/Theses/1996_10_SalamaThesis.pdf page 76
     #prims constrained with relaxation instead of predictive (when no edge can be added, instead replace an edge)
     #improvement process -- this process can also be added over the other algorithms
-    pass 
+    phase_1 = prims_constrained(graph, root, c, relaxation=True) # already implemented prims, reuse that instead of doing it from scratch
+    # phase_2 = improve(phase_1, graph, root, c)
+    return phase_1
 
-def CDA_Heuristic(graph, root, c):
-   #https://citeseerx.ist.psu.edu/document?repid=rep1&type=pdf&doi=100d9cebbe021d7bcd1e516544290efd53ebe842
-    pass
 
 def RBMH_Heuristic(graph, root, c):
     #https://www.ac.tuwien.ac.at/files/pub/berlakovich-11.pdf
+    #gonna be hard to implement, very little information is given
     pass 
 
+def KBH_Heuristic(graph, root, c):
+    #https://link.springer.com/chapter/10.1007/978-3-642-04772-5_92
+    #https://github.com/Logic4Twisted/RDCMST/blob/master/RDCMST.py
+    pass
 
 
 
