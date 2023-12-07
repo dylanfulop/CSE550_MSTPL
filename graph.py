@@ -698,20 +698,8 @@ def BDB_Heurisitc(graph, root, c):
     #prims constrained with relaxation instead of predictive (when no edge can be added, instead replace an edge)
     #improvement process -- this process can also be added over the other algorithms
     phase_1 = prims_constrained(graph, root, c, relaxation=True) # already implemented prims, reuse that instead of doing it from scratch
-    # phase_2 = improve(phase_1, graph, root, c)
+    # phase_2 = improve(phase_1, graph, root, c) #wanna study without this as well, so do it seperately
     return phase_1
-
-
-def RBMH_Heuristic(graph, root, c):
-    #https://www.ac.tuwien.ac.at/files/pub/berlakovich-11.pdf
-    #gonna be hard to implement, very little information is given
-    pass 
-
-def KBH_Heuristic(graph, root, c):
-    #https://link.springer.com/chapter/10.1007/978-3-642-04772-5_92
-    #https://github.com/Logic4Twisted/RDCMST/blob/master/RDCMST.py
-    pass
-
 
 
 
